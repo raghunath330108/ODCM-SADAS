@@ -1,5 +1,7 @@
 # ODCM-SADAS
 
+## Deep Transfer Learning for Adaptive Sensor Fusion: YOLOv11 with ASSA-Optimized Multi-Sensor Integration and GOA-Tuned LSTM
+
 Research code for a multimodal vehicle and vulnerable-road-user detection and
 classification pipeline using camera, LiDAR, and radar data. The pipeline
 combines sensor preprocessing and calibration, a fused YOLO detector, ASSA
