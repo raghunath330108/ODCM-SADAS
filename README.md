@@ -2,10 +2,14 @@
 
 ## Deep Transfer Learning for Adaptive Sensor Fusion: YOLOv11 with ASSA-Optimized Multi-Sensor Integration and GOA-Tuned LSTM
 
-Research code for a multimodal vehicle and vulnerable-road-user detection and
-classification pipeline using camera, LiDAR, and radar data. The pipeline
-combines sensor preprocessing and calibration, a fused YOLO detector, ASSA
-fusion-weight search, and a GOA-tuned LSTM classifier.
+## Abstract
+
+Advanced Driver Assistance Systems (ADAS) have become increasingly popular due to rapid advancements in computing, sensing technologies, and automotive safety. ADAS enhances the safety and comfort of the driver by providing automatic vehicle control and issuing critical warnings. Nowadays, Artificial Intelligence (AI), Machine Learning (ML), and Deep Learning (DL) techniques are gaining significant attention in ADAS automation tasks. This manuscript presents a novel Object Detection and Classification Method for the Safety Assessment of Driver Assistance Systems (ODCM-SADAS) model. The proposed ODCM-SADAS model integrates camera, RADAR, and LiDAR data for accurate environmental perception. The model performs several key operations, including data preprocessing, sensor calibration, data fusion, object detection, classification, and hyperparameter tuning. During the data preprocessing stage, z-score normalization and a sensor calibration process are applied to enhance data consistency. A novel fusion fine-tuning algorithm, termed the Adaptive Salp Swarm Algorithm (ASSA), is employed to optimally tune the weights among the camera, LiDAR, and RADAR modalities. The YOLOv11 model is utilized for the object detection process to locate and identify objects of interest within video frames or images. In the classification stage, the Long Short-Term Memory (LSTM) network is employed to categorize detected objects. To improve the classification performance of LSTM, its hyperparameters are optimized using the Grasshopper Optimization Algorithm (GOA).
+
+In this research study, we present a synchronized multimodal perception framework that dynamically balances contributions from different sensors and temporal classification for Advanced Driver Assistance Systems (ADAS). The framework enables dynamic sensor weighting from camera, RADAR and LiDAR sensors under various traffic scenarios, in contrast to fixed-fusion approaches. The proposed research assessed on a class-balanced subset of nuScenes dataset which contains 1500 multimodal data samples. The framework outperforms existing baselines with 98.16% classification accuracy and 75.88% mAP@0.5, and efficient inference making it highly suitable for deployment in smart transportation systems.
+
+This repository contains research code for multimodal camera, LiDAR, and RADAR
+fusion for object detection and temporal classification.
 
 > This code is intended solely for research and study purposes and is not for
 > commercial use.
