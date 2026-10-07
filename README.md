@@ -77,13 +77,52 @@ licenses permit redistribution.
 
 ## Reproducibility and publication
 
-- The scripts use fixed defaults and expose command-line options for settings
-  such as epochs, batch size, random seed, and output paths. Record any
-  deviations when reporting results.
-- The train/validation/test split used by model code is scene-grouped to avoid
-  placing samples from the same scene in multiple splits.
-- No trained metrics or publication citation are supplied here. Add verified
-  experimental results and the final citation before release.
+Results reported in the associated journal publication may not be reproduced
+exactly by running this code in a different environment. Outcomes can depend
+on factors including:
+
+- **Data collection and selection:** nuScenes release/version, available
+  sensor files, collection criteria, class quotas, visibility filters, and
+  the exact samples collected. A different subset can change class balance
+  and the number and length of object tracks.
+- **Preprocessing and splits:** software versions, generated labels and sensor
+  features, preprocessing options, and split assignments. The model pipeline
+  uses scene-grouped splits to reduce leakage between train, validation, and
+  test data; use the same processed data and split files when comparing runs.
+- **Compute environment:** GPU model and memory, CPU, operating system,
+  NVIDIA driver, CUDA, PyTorch/torchvision, and other dependency versions.
+  Floating-point implementations, hardware kernels, data-loader behavior,
+  and parallel execution can lead to small numerical differences and
+  different training trajectories.
+- **Run configuration:** random seeds, batch size, worker count, training
+  duration, checkpoint initialization, and any command-line overrides.
+  Search and training procedures may also be sensitive to initialization and
+  stochastic operations.
+
+For the closest reproduction of the journal results, use the same collected
+sample set, pretrained checkpoint, split files, preprocessing outputs, and
+training/search settings used for those results. This repository does not
+include those data, weights, or published run artifacts, so exact replication
+cannot be guaranteed from the source code alone.
+
+### Recommended reporting practice
+
+1. Record the nuScenes version and collection configuration, sample/annotation
+   counts by class and split, and a checksum or archived copy of the split
+   manifests.
+2. Record the repository commit, Python and package versions, OS, GPU model,
+   driver/CUDA versions, command lines, and all non-default settings.
+3. Preserve the initial checkpoint and generated preprocessing outputs with
+   the run, subject to dataset and weight licensing restrictions.
+4. Run stochastic experiments with multiple seeds when feasible and report
+   the mean and variability, alongside the individual settings.
+5. Keep test data for final evaluation only; select checkpoints and tune
+   hyperparameters using training and validation data.
+6. Report failed or incomplete runs and deviations from the published setup
+   rather than presenting them as exact replications.
+
+No trained metrics or publication citation are supplied here. Add verified
+results and the final citation before release.
 
 ## Contact
 
