@@ -124,6 +124,12 @@ cannot be guaranteed from the source code alone.
 No trained metrics or publication citation are supplied here. Add verified
 results and the final citation before release.
 
+## Project updates
+
+Watch this repository for ongoing project updates. We will update the
+repository as relevant code, documentation, and project information become
+available.
+
 ## Contact
 
 For code clarification or to report a technical issue, contact the author at
