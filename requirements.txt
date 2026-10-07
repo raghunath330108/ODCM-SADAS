@@ -1,0 +1,7 @@
+ultralytics==8.4.173
+numpy
+opencv-python
+matplotlib
+pyquaternion
+scipy
+Pillow
