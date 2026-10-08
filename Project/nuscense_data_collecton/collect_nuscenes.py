@@ -125,27 +125,22 @@ def allowed_image_box(category_name, bbox_xyxy, width, height):
     x1, y1, x2, y2 = bbox_xyxy
     if not np.isfinite(bbox_xyxy).all() or x2 <= x1 or y2 <= y1:
         return None
-    area = (x2 - x1) * (y2 - y1)
-    visible_width = max(0.0, min(float(width), x2) - max(0.0, x1))
-    visible_height = max(0.0, min(float(height), y2) - max(0.0, y1))
-    visible_fraction = (visible_width * visible_height) / area
-    tolerance = 0.10 if category_name in {
-        "vehicle.truck",
-        "vehicle.bus.rigid",
-    } else 0.0
-    if visible_fraction + 1e-9 < 1.0 - tolerance:
+    if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
         return None
-    clipped = [
-        max(0.0, min(float(width), x1)),
-        max(0.0, min(float(height), y1)),
-        max(0.0, min(float(width), x2)),
-        max(0.0, min(float(height), y2)),
-    ]
+    clipped = [float(x1), float(y1), float(x2), float(y2)]
     return {
         "bbox_xyxy": [float(value) for value in bbox_xyxy],
         "bbox_xyxy_clipped": clipped,
-        "visible_fraction": float(visible_fraction),
+        "visible_fraction": 1.0,
     }
+
+
+def meets_point_count_threshold(annotation, class_name):
+    lidar_threshold, radar_threshold = (3, 1) if class_name == "bicycle" else (5, 2)
+    return (
+        int(annotation.get("num_lidar_pts", 0)) > lidar_threshold
+        or int(annotation.get("num_radar_pts", 0)) > radar_threshold
+    )
 
 
 def project_annotation(annotation, camera_transform, width, height):
@@ -254,6 +249,7 @@ def solve_split_assignments(
     for (class_name, split_name), row in class_split_rows.items():
         required = targets_by_class.get(class_name, {}).get(split_name, 0)
         lower[row] = required
+        upper[row] = required
 
     rng = np.random.default_rng(seed)
     low_visibility_penalty = sum(class_targets.values()) + 1
@@ -306,13 +302,13 @@ def solve_split_assignments(
         for class_name in CLASS_TO_CATEGORY
     }
     if any(
-        actual[class_name][split_name] < targets_by_class[class_name][split_name]
+        actual[class_name][split_name] != targets_by_class[class_name][split_name]
         for class_name in CLASS_TO_CATEGORY
         for split_name in SPLIT_NAMES
     ):
         raise RuntimeError(
-            f"Split solver returned class counts below their minimum targets: {actual}; "
-            f"minimums {targets_by_class}"
+            f"Split solver returned counts different from the exact targets: {actual}; "
+            f"targets {targets_by_class}"
         )
     return assignments, targets_by_class
 
@@ -404,22 +400,58 @@ def build_candidates(
 ):
     complete_samples = {}
     missing_by_channel = Counter()
+    sensor_file_checks = {
+        channel: Counter(
+            checked=0, readable=0, missing=0, unreadable=0, invalid_image_size=0
+        )
+        for channel in REQUIRED_CHANNELS
+    }
+    skipped_samples = {}
     for sample_token, sample in samples.items():
         channels = sample_data_by_sample.get(sample_token, {})
+        sample_issues = []
         for channel in REQUIRED_CHANNELS:
             row = channels.get(channel)
-            if row is None or not (dataset_root / row["filename"]).is_file():
+            checks = sensor_file_checks[channel]
+            checks["checked"] += 1
+            if row is None:
                 missing_by_channel[channel] += 1
-        if all(
-            channel in channels
-            and (dataset_root / channels[channel]["filename"]).is_file()
-            for channel in REQUIRED_CHANNELS
-        ):
+                checks["missing"] += 1
+                sample_issues.append(f"{channel}:missing")
+                continue
+            path = dataset_root / row["filename"]
+            if not path.is_file():
+                missing_by_channel[channel] += 1
+                checks["missing"] += 1
+                sample_issues.append(f"{channel}:missing")
+                continue
+            try:
+                with path.open("rb") as sensor_file:
+                    if not sensor_file.read(1):
+                        raise OSError("empty sensor file")
+                if channel in CAMERA_CHANNELS:
+                    with Image.open(path) as image:
+                        if image.size != IMAGE_SIZE:
+                            checks["invalid_image_size"] += 1
+                            sample_issues.append(
+                                f"{channel}:invalid_image_size:{image.width}x{image.height}"
+                            )
+                            continue
+                        image.load()
+            except (OSError, ValueError) as error:
+                checks["unreadable"] += 1
+                sample_issues.append(f"{channel}:unreadable:{error}")
+                continue
+            checks["readable"] += 1
+        if sample_issues:
+            skipped_samples[sample_token] = sample_issues
+        else:
             complete_samples[sample_token] = channels
 
     candidates = {}
     high_visibility_candidates = {name: set() for name in CLASS_TO_CATEGORY}
     candidate_visibility = {}
+    point_count_rejections = Counter()
     for sample_token, channels in complete_samples.items():
         transforms = {}
         for channel in CAMERA_CHANNELS:
@@ -433,6 +465,9 @@ def build_candidates(
         for annotation in annotations_by_sample.get(sample_token, ()):
             category_name = annotation["_category_name"]
             class_name = CATEGORY_TO_CLASS[category_name]
+            if not meets_point_count_threshold(annotation, class_name):
+                point_count_rejections[class_name] += 1
+                continue
             boxes = {}
             for channel, transform in transforms.items():
                 box = project_annotation(
@@ -489,6 +524,9 @@ def build_candidates(
         high_visibility_candidates,
         complete_samples,
         missing_by_channel,
+        sensor_file_checks,
+        skipped_samples,
+        point_count_rejections,
     )
 
 
@@ -704,6 +742,9 @@ def run(args):
         high_visibility_candidates,
         complete_samples,
         missing_by_channel,
+        sensor_file_checks,
+        skipped_samples,
+        point_count_rejections,
     ) = build_candidates(
         dataset_root,
         samples,
@@ -774,6 +815,12 @@ def run(args):
             "split_targets": split_targets,
         }
 
+    if any(count < args.quota_per_class for count in class_targets.values()):
+        raise RuntimeError(
+            "Refusing to collect because one or more classes cannot meet "
+            f"the requested {args.quota_per_class} memberships."
+        )
+
     staging_dir.mkdir(parents=True)
     for index, (sample_token, split_name) in enumerate(sorted(assignments.items()), 1):
         collect_sample(
@@ -807,8 +854,8 @@ def run(args):
             "seed": args.seed,
             "sample_quota_per_class": args.quota_per_class,
             "quota_semantics": (
-                "Minimum per-class memberships in each sample-level split; actual counts may exceed "
-                "targets when co-occurring labels make exact counts infeasible."
+                "Exactly the requested per-class memberships in each sample-level split; "
+                "each selected frame contributes once to every qualifying class."
             ),
             "sample_level_split": True,
             "scene_grouping": False,
@@ -821,16 +868,26 @@ def run(args):
                 "Visibility 3/4 is preferred; visibility 2 is used only as needed "
                 "to meet exact joint per-class and split counts."
             ),
-            "truck_bus_max_box_area_outside_image": 0.10,
-            "other_classes_max_box_area_outside_image": 0.0,
+            "projected_box_must_fit_image": True,
             "visibility_2_fallback_reason": (
                 "Used only where necessary to make exact class and split counts "
                 "jointly feasible when frames contain multiple target classes."
             ),
-            "point_count_filter": None,
+            "point_count_filter": {
+                "logic": "an annotation must exceed either its class-specific LiDAR or radar threshold",
+                "default_thresholds": {
+                    "num_lidar_pts": "> 5",
+                    "num_radar_pts": "> 2",
+                },
+                "bicycle_thresholds": {
+                    "num_lidar_pts": "> 3",
+                    "num_radar_pts": "> 1",
+                },
+                "rejected_annotations_by_class": dict(point_count_rejections),
+            },
             "point_count_source": (
                 "nuScenes sample_annotation num_lidar_pts and num_radar_pts; "
-                "counts are recorded but do not filter samples"
+                "counts are recorded for every selected annotation"
             ),
             "box_projection": "3D annotation corners projected using each camera's calibrated sensor and ego pose",
         },
@@ -840,6 +897,11 @@ def run(args):
             "complete_frames": len(complete_samples),
             "incomplete_frames_skipped": len(samples) - len(complete_samples),
             "missing_keyframe_files_by_channel": dict(sorted(missing_by_channel.items())),
+            "sensor_file_checks": {
+                channel: dict(sensor_file_checks[channel])
+                for channel in REQUIRED_CHANNELS
+            },
+            "skipped_samples": skipped_samples,
         },
         "class_counts": {
             class_name: {
